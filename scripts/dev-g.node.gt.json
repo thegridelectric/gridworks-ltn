@@ -1,0 +1,9 @@
+{
+  "TypeName": "g.node.gt",
+  "Version": "006",
+  "GNodeId": "3b9f2a6c-5d1e-4f7a-9c8b-2e4d6a8f0c1b",
+  "Alias": "d1.isone.ct.newhaven.willow1",
+  "BaseClass": "LeafTransactiveNode",
+  "GNodeClass": "LeafTransactiveNode",
+  "Status": "Pending"
+}

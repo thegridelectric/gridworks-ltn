@@ -1,0 +1,27 @@
+from typing import Literal, Self
+from pydantic import model_validator
+from gwltn.sema.base import SemaType
+from gwltn.sema.property_format import PositiveInt
+
+
+class WaterStore(SemaType):
+    """Sema: https://schemas.electricity.works/types/gw.water.store/000"""
+
+    total_store_tanks: PositiveInt
+    gallons_per_tank: PositiveInt
+    temp_sensors_per_tank: PositiveInt
+    type_name: Literal["gw.water.store"] = "gw.water.store"
+    version: Literal["000"] = "000"
+
+    @model_validator(mode="after")
+    def check_axiom_1(self) -> Self:
+        """
+        Axiom 1: TankCount
+        TotalStoreTanks SHALL be at most 6.
+        """
+        if self.total_store_tanks > 6:
+            raise ValueError(
+                "Axiom 1 (TankCount) failed: TotalStoreTanks "
+                f"({self.total_store_tanks}) must be at most 6."
+            )
+        return self

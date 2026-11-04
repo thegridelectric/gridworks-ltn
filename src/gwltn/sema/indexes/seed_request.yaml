@@ -1,0 +1,139 @@
+# Seed request for the LTN's Sema snapshot (`gwltn.sema`): every word the
+# LTN speaks or hears, at the ONE version it speaks, vendored and
+# regenerated with scripts/regen_sema_snapshot.sh. The LTN shares the
+# scada's wire, so each pin equals the scada's (gridworks-scada
+# packages/gridworks-scada-protocol/sema_seed_request.yaml). Formats arrive
+# through dependencies. The layout and operational-params words are
+# staging, so the build allows staged words.
+#
+# Local class names drop a leading gw1./gw2./gw. segment, as the scada's do.
+
+local_names:
+  strip_prefixes: [gw1, gw2, gw]
+
+initial_targets:
+  types:
+    # the gwbase envelope and the link's control words
+    gridworks.header:
+      versions: ["001"]
+    gridworks.ack: {}
+    gridworks.ping: {}
+    gridworks.event.startup: {}
+    gridworks.event.shutdown:
+      versions: ["001"]
+    gridworks.event.problem:
+      versions: ["001"]
+    gridworks.event.comm.mqtt.connect:
+      versions: ["001"]
+    gridworks.event.comm.mqtt.disconnect:
+      versions: ["001"]
+    gridworks.event.comm.mqtt.fully.subscribed:
+      versions: ["001"]
+    gridworks.event.comm.peer.active:
+      versions: ["001"]
+    gridworks.event.comm.response.timeout:
+      versions: ["001"]
+    # what the scada says to the LTN
+    layout.lite:
+      versions: ["013"]
+    ta.deed:
+      versions: ["000"]
+    gw.house.operating.status:
+      versions: ["000"]
+    gw.scada.commit:
+      versions: ["000"]
+    heating.forecast:
+      versions: ["000"]
+    report:
+      versions: ["003"]
+    report.event:
+      versions: ["004"]
+    snapshot.spaceheat:
+      versions: ["003"]
+    power.watts:
+      versions: ["000"]
+    glitch:
+      versions: ["000"]
+    machine.states:
+      versions: ["000"]
+    slow.contract.heartbeat:
+      versions: ["002"]
+    slow.contract.rejection:
+      versions: ["000"]
+    slow.dispatch.contract:
+      versions: ["000"]
+    # what the LTN says
+    send.layout:
+      versions: ["001"]
+    flo.params:
+      versions: ["001"]
+    flo.recommendation:
+      versions: ["000"]
+    flo.optimal.path:
+      versions: ["000"]
+    bid:
+      versions: ["000"]
+    price.quantity.unitless:
+      versions: ["001"]
+    # the maker
+    latest.price:
+      versions: ["000"]
+    # the house: the layout pair the LTN boots on
+    gw.house0.layout:
+      versions: ["000"]
+    gw.house0.family.params:
+      versions: ["000"]
+    gw.house0.no.sieg:
+      versions: ["000"]
+    gw.house0.no.sieg.family.params:
+      versions: ["000"]
+    gw.nolan.layout:
+      versions: ["000"]
+    gw.nolan.family.params:
+      versions: ["000"]
+    gw.operational.params:
+      versions: ["000"]
+    gw.water.store:
+      versions: ["000"]
+    heating.curve:
+      versions: ["000"]
+    data.channel.gt:
+      versions: ["004"]
+    derived.channel.gt:
+      versions: ["003"]
+    # weather
+    gw.weather.channel.gt:
+      versions: ["002"]
+    gw.weather.forecast:
+      versions: ["002"]
+    gw.weather.forecast.binding:
+      versions: ["000"]
+    gw.weather.forecast.bundle.gt:
+      versions: ["002"]
+    gw.weather.forecast.channel.gt:
+      versions: ["000"]
+    gw.weather.forecast.series:
+      versions: ["000"]
+    gw.weather.seasonal.template.gt:
+      versions: ["000"]
+  enums:
+    gw.g.node.class:
+      versions: ["000"]
+    log.level: {}
+    market.price.unit:
+      versions: ["000"]
+    market.quantity.unit:
+      versions: ["000"]
+    gw1.quantity:
+      versions: ["003"]
+    relay.closed.or.open: {}
+    gw1.seasonal.storage.mode:
+      versions: ["000"]
+    gw1.service.mode:
+      versions: ["000"]
+    gw1.slow.dispatch.contract.status:
+      versions: ["000"]
+    gw1.unit:
+      versions: ["003"]
+    gw.weather.forecast.fidelity:
+      versions: ["000"]
