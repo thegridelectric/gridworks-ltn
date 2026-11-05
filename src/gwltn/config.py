@@ -6,9 +6,10 @@ from pathlib import Path
 from gwbase.config import GNodeSettings
 from gwbase.config.paths import config_dir, data_dir
 from gwbase.transport_format import LeftRightDot
-from pydantic import Field
+from pydantic import Field, PositiveInt, field_validator
 from pydantic_settings import SettingsConfigDict
 
+from gwltn.market import MARKET_SLOT_S
 from gwltn.weather_source import WeatherSourceKind
 
 SERVICE_NAME = "ltn"
@@ -56,6 +57,10 @@ class GwltnSettings(GNodeSettings):
     contract_rep_logging_level: int = logging.INFO
     flo_logging_level: int = logging.INFO
     flo_horizon_hours: int = 48
+    # How many seconds before a market slot starts the LTN measures the
+    # store, requests the FLO and bids for that slot. Less than one slot,
+    # so each slot gets exactly one request.
+    bid_lead_s: PositiveInt = 180
     # Count no buffer energy when true.
     keep_buffer_full: bool = False
     weather_source: WeatherSourceKind = WeatherSourceKind.Gwwf
@@ -67,6 +72,15 @@ class GwltnSettings(GNodeSettings):
         env_nested_delimiter="__",
         extra="ignore",
     )
+
+    @field_validator("bid_lead_s")
+    @classmethod
+    def bid_lead_is_inside_one_slot(cls, v: int) -> int:
+        if v >= MARKET_SLOT_S:
+            raise ValueError(
+                f"bid_lead_s must be less than the market slot ({MARKET_SLOT_S} s), got {v}"
+            )
+        return v
 
     @classmethod
     def load(cls) -> "GwltnSettings":

@@ -52,10 +52,10 @@ from gwltn.flo_request import (
     StoreState,
     build_flo_params,
     load_previous_run,
-    minute_of_hour,
     next_slot_start_s,
     previous_run_for,
     save_previous_run,
+    seconds_to_slot_start,
 )
 from gwltn.layout import LtnLayout, load_layout, load_operational_params
 from gwltn.market import answers_request, bid_from_recommendation, cleared_pair_index
@@ -225,7 +225,14 @@ class LtnActor(GridworksActor):
             logger=contract_logger,
             send_to_scada=self.send_to_scada,
         )
-        self.send_bid_minute: int = 57
+        # The loop wakes every MAIN_LOOP_SLEEP_SECONDS; a lead shorter than
+        # that can pass between two wakes and the slot gets no bid.
+        if settings.bid_lead_s <= self.MAIN_LOOP_SLEEP_SECONDS:
+            raise ValueError(
+                f"bid_lead_s ({settings.bid_lead_s}) must exceed the main loop "
+                f"sleep ({self.MAIN_LOOP_SLEEP_SECONDS} s)"
+            )
+        self.bid_lead_s: int = settings.bid_lead_s
         # Gets strategy from scada sending LayoutLite
         self.layout_lite: Optional[LayoutLite] = None
         # The posture facts ride gw.house.operating.status, the LTN's one source;
@@ -593,16 +600,18 @@ class LtnActor(GridworksActor):
                 await asyncio.sleep(self.MAIN_LOOP_SLEEP_SECONDS)
                 continue
 
-            # One request per slot, at the bid minute: the store is measured
-            # then, the request goes to the FLO, and the bid goes off its
-            # answer when it arrives. The request stays until the next
-            # slot's replaces it, so the clearing price at :00 still finds
-            # it, and a late answer is dropped against it.
+            # One request per slot, bid_lead_s before it starts: the store
+            # is measured then, the request goes to the FLO, and the bid
+            # goes off its answer when it arrives. The request stays until
+            # the next slot's replaces it, so the clearing price at the slot
+            # start still finds it, and a late answer is dropped against it.
             now_s = self.plant_clock.now()
             slot_start_s = next_slot_start_s(now_s)
-            if minute_of_hour(now_s) < self.send_bid_minute:
+            to_slot_s = seconds_to_slot_start(now_s)
+            if to_slot_s > self.bid_lead_s:
                 self.log(
-                    f"Waiting for minute {self.send_bid_minute} to request the FLO."
+                    f"Waiting until {self.bid_lead_s} s before the slot to request "
+                    f"the FLO ({to_slot_s} s to go)."
                 )
             elif (
                 self.flo_params is not None

@@ -57,12 +57,14 @@ word.
 
 ## The FLO
 
-At the bid minute of each hour the LTN measures the store, builds one
+`GWLTN_BID_LEAD_S` seconds before each market slot starts (180 by
+default, less than one slot) the LTN measures the store, builds one
 `flo.params` and sends it to the FLO GNode. The recommendation that
 answers it (same bidder, same slot) is kept for the clearing, copied to
 the scada, and the bid goes off it to the maker. A recommendation for
-any other request is dropped. With no answer by the top of the hour the
-LTN places no bid for the slot.
+any other request is dropped. With no answer by the slot start the LTN
+places no bid for the slot. The slot is an hour starting on the hour,
+hard-coded until the market posts its own facts.
 
 ## Run
 

@@ -8,6 +8,7 @@ from typing import NamedTuple, Optional, Sequence
 
 import numpy as np
 
+from gwltn.market import MARKET_SLOT_S
 from gwltn.sema.enums import SeasonalStorageMode, WeatherForecastFidelity
 from gwltn.sema.property_format import LeftRightDot, UTCMilliseconds, UTCSeconds
 from gwltn.sema.types import (
@@ -100,15 +101,15 @@ def load_previous_run(file: Path) -> Optional[PreviousRun]:
 
 
 def next_slot_start_s(now_s: float) -> int:
-    """The start of the hourly market slot after the one `now_s` is in,
-    in UTC seconds: whole hours of the epoch, so a clock change in the
-    plant's timezone does not move it."""
-    return (int(now_s) // 3600 + 1) * 3600
+    """The start of the market slot after the one `now_s` is in, in UTC
+    seconds: whole slots of the epoch, so a clock change in the plant's
+    timezone does not move it."""
+    return (int(now_s) // MARKET_SLOT_S + 1) * MARKET_SLOT_S
 
 
-def minute_of_hour(now_s: float) -> int:
-    """Minutes into the current hour of the epoch."""
-    return int(now_s) % 3600 // 60
+def seconds_to_slot_start(now_s: float) -> int:
+    """Whole seconds from `now_s` to the start of the next market slot."""
+    return next_slot_start_s(now_s) - int(now_s)
 
 
 def live_forecast(forecast: ForecastPair) -> ForecastPair:
