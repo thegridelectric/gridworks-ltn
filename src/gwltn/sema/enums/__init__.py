@@ -5,6 +5,7 @@ from gwltn.sema.enums.circulator_role import CirculatorRole
 from gwltn.sema.enums.day_of_week import DayOfWeek
 from gwltn.sema.enums.dispatch_refusal_reason import DispatchRefusalReason
 from gwltn.sema.enums.emission_method import EmissionMethod
+from gwltn.sema.enums.flo_refusal_reason import FloRefusalReason
 from gwltn.sema.enums.fsm_report_type import FsmReportType
 from gwltn.sema.enums.g_node_class import GNodeClass
 from gwltn.sema.enums.g_node_status import GNodeStatus
@@ -55,6 +56,7 @@ __all__ = [
     "DayOfWeek",
     "DispatchRefusalReason",
     "EmissionMethod",
+    "FloRefusalReason",
     "FsmReportType",
     "GNodeClass",
     "GNodeStatus",

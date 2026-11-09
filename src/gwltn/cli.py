@@ -7,19 +7,31 @@ import argparse
 import logging
 import sys
 import time
+from zoneinfo import ZoneInfo
 
 import dotenv
+from gwbase.logging_setup import HumanFormatter
 
 from gwltn.config import GwltnSettings
 from gwltn.ltn_actor import LtnActor
 
 
+class LoggerNameAsAlias(logging.Filter):
+    """On the stdout stream the alias slot of the gwbase line names the
+    logger (``gwltn.ltn_actor``), since these records come from no actor."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.service_alias = record.name
+        return True
+
+
 def run_rabbit(settings: GwltnSettings) -> None:
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        stream=sys.stdout,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # The stdout stream (journald) in the same line format and zone as the
+    # actor's file log, so the two agree on the hour.
+    stdout = logging.StreamHandler(sys.stdout)
+    stdout.setFormatter(HumanFormatter(ZoneInfo(settings.log_tz)))
+    stdout.addFilter(LoggerNameAsAlias())
+    logging.basicConfig(level=settings.log_level.upper(), handlers=[stdout])
     actor = LtnActor(settings=settings)
     actor.start()
     try:

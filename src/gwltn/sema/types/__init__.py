@@ -20,6 +20,7 @@ from gwltn.sema.types.element_backup import ElementBackup
 from gwltn.sema.types.flo_optimal_path import FloOptimalPath
 from gwltn.sema.types.flo_params import FloParams
 from gwltn.sema.types.flo_recommendation import FloRecommendation
+from gwltn.sema.types.flo_refusal import FloRefusal
 from gwltn.sema.types.flo_tuning_alice import FloTuningAlice
 from gwltn.sema.types.flo_tuning_bruce import FloTuningBruce
 from gwltn.sema.types.fsm_atomic_report import FsmAtomicReport
@@ -160,6 +161,7 @@ __all__ = [
     "FloOptimalPath",
     "FloParams",
     "FloRecommendation",
+    "FloRefusal",
     "FloTuningAlice",
     "FloTuningBruce",
     "FsmAtomicReport",

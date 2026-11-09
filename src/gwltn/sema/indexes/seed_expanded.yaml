@@ -1,6 +1,6 @@
 metadata:
   generated_from: indexes/public_registry.yaml
-  generated_at: '2026-11-04T05:10:27Z'
+  generated_at: '2026-11-06T23:06:44Z'
   note: Transitive closure of initial_targets
 initial_targets:
 - gridworks.header:001
@@ -31,6 +31,7 @@ initial_targets:
 - send.layout:001
 - flo.params:001
 - flo.recommendation:000
+- flo.refusal:000
 - flo.optimal.path:000
 - bid:000
 - price.quantity.unitless:001
@@ -116,6 +117,9 @@ worklist:
     day.of.week:
       '000':
         path: definitions/enums/day.of.week/000.yaml
+    flo.refusal.reason:
+      '000':
+        path: definitions/enums/flo.refusal.reason/000.yaml
     fsm.report.type:
       '000':
         path: definitions/enums/fsm.report.type/000.yaml
@@ -306,6 +310,9 @@ worklist:
     flo.recommendation:
       '000':
         path: definitions/types/flo.recommendation/000.yaml
+    flo.refusal:
+      '000':
+        path: definitions/types/flo.refusal/000.yaml
     flo.tuning.alice:
       '000':
         path: definitions/types/flo.tuning.alice/000.yaml

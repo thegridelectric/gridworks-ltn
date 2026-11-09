@@ -5,8 +5,10 @@ topic the scada subscribes to, inside the scada's 5 s ack timer, and
 takes the house's layout and operating status. A stand-in maker's
 `latest.price` on its mic exchange reaches the LTN, and a stand-in FLO's
 direct `flo.recommendation` reaches it over the Flo-to-LeafTransactiveNode
-edge. A second stand-in scada's traffic is asserted undelivered.
-Self-skips without a broker."""
+edge, as does its `flo.refusal`: one for a request the LTN does not hold
+is dropped, one for the request held is copied to the scada and raised
+as a Warning glitch. A second stand-in scada's traffic is asserted
+undelivered. Self-skips without a broker."""
 
 from __future__ import annotations
 
@@ -32,6 +34,7 @@ from gwltn.ltn_actor import LtnActor
 from gwltn.market import market_slot_name
 from gwltn.sema.base import SemaType
 from gwltn.sema.enums import (
+    FloRefusalReason,
     MarketPriceUnit,
     MarketQuantityUnit,
     SeasonalStorageMode,
@@ -42,7 +45,9 @@ from gwltn.sema.enums import (
 )
 from gwltn.sema.types import (
     FloOptimalPath,
+    FloParams,
     FloRecommendation,
+    FloRefusal,
     GridworksEventStartup,
     GridworksPing,
     HouseOperatingStatus,
@@ -135,6 +140,25 @@ def recommendation(alias: str, start_s: int) -> FloRecommendation:
     )
 
 
+def refusal(alias: str, start_s: int) -> FloRefusal:
+    return FloRefusal(
+        bidder_alias=alias,
+        start_unix_s=start_s,
+        reason=FloRefusalReason.NoMatrix,
+        detail="no cached matrix for the plant shape",
+        created_ms=int(time.time() * 1000),
+    )
+
+
+def held_request(alias: str, start_s: int) -> FloParams:
+    """The sample flo.params, re-addressed to this bidder and slot."""
+    sample = Path(__file__).parents[1] / "src/gwltn/sema/samples/flo.params.001.json"
+    d = json.loads(sample.read_text())
+    d["GNodeAlias"] = alias
+    d["StartUnixS"] = start_s
+    return FloParams.from_dict(d)
+
+
 class StandInScada:
     """A scada's upstream link, as paho sees it: publishes on
     `gw/<scada>/to/ltn/<type>` the `gw` envelope the proactor wraps a word
@@ -189,7 +213,7 @@ class StandInScada:
         self.client.disconnect()
 
 
-def publish_recommendation(flo_alias: str, recommendation: FloRecommendation) -> None:
+def publish_flo_reply(flo_alias: str, reply: FloRecommendation | FloRefusal) -> None:
     """The FLO's direct reply on its own mic exchange, as gwbase routes it:
     the Flo-to-LeafTransactiveNode edge forwards it to the LTN's queue."""
     connection = pika.BlockingConnection(pika.URLParameters(AMQP_URL))
@@ -200,11 +224,11 @@ def publish_recommendation(flo_alias: str, recommendation: FloRecommendation) ->
             routing_key=json_direct_routing_key(
                 from_alias=flo_alias,
                 from_class_token=routing_code(TransportClass.Flo),
-                type_name=recommendation.type_name,
+                type_name=reply.type_name,
                 to_class_token=routing_code(TransportClass.LeafTransactiveNode),
-                to_alias=recommendation.bidder_alias,
+                to_alias=reply.bidder_alias,
             ),
-            body=recommendation.to_bytes(),
+            body=reply.to_bytes(),
         )
     finally:
         connection.close()
@@ -296,7 +320,7 @@ def test_the_scada_seam(settings: GwltnSettings, tmp_path: Path) -> None:
 
         # The FLO's direct reply reaches the LTN over the edge; with no
         # request open it is dropped and no bid goes out.
-        publish_recommendation(FLO_ALIAS, recommendation(ltn, slot_start_s + 3600))
+        publish_flo_reply(FLO_ALIAS, recommendation(ltn, slot_start_s + 3600))
         wait_for(
             lambda: actor.heard[-1:] == ["flo.recommendation"], 5, "the FLO's reply"
         )
@@ -308,6 +332,28 @@ def test_the_scada_seam(settings: GwltnSettings, tmp_path: Path) -> None:
         assert scada.next_heard(2.0) is None
         assert actor.acked == 2
         assert actor.heard[-1] == "flo.recommendation"
+
+        # The FLO's refusal of a request the LTN does not hold is dropped:
+        # nothing reaches the scada.
+        publish_flo_reply(FLO_ALIAS, refusal(ltn, slot_start_s + 3600))
+        wait_for(lambda: actor.heard[-1:] == ["flo.refusal"], 5, "the FLO's refusal")
+        assert scada.next_heard(1.0) is None
+
+        # One for the request held is copied to the scada for the record
+        # and raised as a Warning glitch; no bid goes out on it.
+        actor.flo_params = held_request(ltn, slot_start_s + 3600)
+        publish_flo_reply(FLO_ALIAS, refusal(ltn, slot_start_s + 3600))
+        copied = scada.next_heard(5.0)
+        raised = scada.next_heard(5.0)
+        assert copied is not None and raised is not None
+        assert copied[0] == f"gw/{dashed(ltn)}/to/s/flo-refusal"
+        assert copied[1]["Payload"]["Reason"] == "NoMatrix"
+        assert raised[0] == f"gw/{dashed(ltn)}/to/s/glitch"
+        assert raised[1]["Payload"]["Type"] == "Warning"
+        assert raised[1]["Payload"]["Summary"] == (
+            f"FLO refused slot {slot_start_s + 3600}: NoMatrix"
+        )
+        assert actor.contract_handler.latest_bid is None
     finally:
         actor.stop()
         scada.close()

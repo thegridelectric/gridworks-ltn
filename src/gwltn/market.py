@@ -1,5 +1,5 @@
-"""The market facts the LTN forms from its ops word, the slot it bids on,
-and the clearing rule that turns its bid curve and a cleared price into
+"""The market facts the LTN forms from its ops word, the slot it bids on
+and whether a slot is the current hour, and the clearing rule that turns its bid curve and a cleared price into
 a quantity."""
 
 from collections.abc import Sequence
@@ -26,6 +26,12 @@ def market_slot_name(ops: OperationalParams, slot_start_s: int) -> MarketSlotNam
     return is_market_slot_name(
         f"e.{ops.market_product_name.value}.{ops.market_maker_alias}.{slot_start_s}"
     )
+
+
+def slot_is_current(slot_name: MarketSlotName, now_s: float) -> bool:
+    """Whether the slot named is the one `now_s` falls in."""
+    slot_start_s = int(slot_name.split(".")[-1])
+    return slot_start_s == int(now_s) - int(now_s) % MARKET_SLOT_S
 
 
 def cleared_pair_index(

@@ -30,8 +30,9 @@ it declares `GwGNodeClass.LeafTransactiveNode` and boots on the
 agree. The FLO and the maker are reached on the class fabric with no
 wrapper: `flo.params` goes to the FLO GNode named by `GWLTN_FLO_ALIAS` as
 a direct message over the LeafTransactiveNode-to-Flo edge and its
-`flo.recommendation` comes back direct over the edge back; the bid goes
-direct to the maker named by the ops word. The maker's `latest.price`
+`flo.recommendation`, or its `flo.refusal` when the FLO cannot serve the
+request, comes back direct over the edge back; the bid goes direct to
+the maker named by the ops word. The maker's `latest.price`
 broadcast arrives on the maker's own mic exchange.
 
 ## The house

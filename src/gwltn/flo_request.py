@@ -55,6 +55,27 @@ class PriceForecast(NamedTuple):
     lmp_usd_per_mwh: list[float]
 
 
+def price_forecast_from(
+    timestamps: Sequence[float],
+    dp_usd_per_mwh: Sequence[float],
+    lmp_usd_per_mwh: Sequence[float],
+    now_s: float,
+) -> PriceForecast:
+    """The next FORECAST_HOURS hours of a saved forecast as seen at `now_s`:
+    hours already begun are dropped, and a forecast that ends early is
+    extended by repeating its last hour."""
+    keep = [i for i, t in enumerate(timestamps) if t > now_s]
+    if not keep:
+        raise ValueError("No forecasts available for the next hours!")
+    dp = [dp_usd_per_mwh[i] for i in keep]
+    lmp = [lmp_usd_per_mwh[i] for i in keep]
+    short = FORECAST_HOURS - len(keep)
+    if short > 0:
+        dp = dp + [dp[-1]] * short
+        lmp = lmp + [lmp[-1]] * short
+    return PriceForecast(dp_usd_per_mwh=dp, lmp_usd_per_mwh=lmp)
+
+
 class PreviousRun(NamedTuple):
     """The path the previous run's cleared price led to, with the price
     that run forecast for the slot after it. No word states the pair yet;

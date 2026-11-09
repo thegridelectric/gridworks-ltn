@@ -69,6 +69,8 @@ initial_targets:
       versions: ["001"]
     flo.recommendation:
       versions: ["000"]
+    flo.refusal:
+      versions: ["000"]
     flo.optimal.path:
       versions: ["000"]
     bid:

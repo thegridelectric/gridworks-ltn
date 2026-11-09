@@ -27,7 +27,6 @@ import asyncio
 import csv
 import json
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -54,11 +53,17 @@ from gwltn.flo_request import (
     load_previous_run,
     next_slot_start_s,
     previous_run_for,
+    price_forecast_from,
     save_previous_run,
     seconds_to_slot_start,
 )
 from gwltn.layout import LtnLayout, load_layout, load_operational_params
-from gwltn.market import answers_request, bid_from_recommendation, cleared_pair_index
+from gwltn.market import (
+    answers_request,
+    bid_from_recommendation,
+    cleared_pair_index,
+    slot_is_current,
+)
 from gwltn.names import (
     BUFFER_DEPTH_CHANNELS,
     HP_SCADA_OPS_RELAY,
@@ -88,6 +93,7 @@ from gwltn.sema.types import (
     FloOptimalPath,
     FloParams,
     FloRecommendation,
+    FloRefusal,
     Glitch,
     GridworksEventCommMqttConnect,
     GridworksEventCommMqttDisconnect,
@@ -122,6 +128,7 @@ LATEST_PRICE_TYPE = LatestPrice.type_name_value()
 BID_TYPE = Bid.type_name_value()
 FLO_REQUEST_TYPE = FloParams.type_name_value()
 FLO_REPLY_TYPE = FloRecommendation.type_name_value()
+FLO_REFUSAL_TYPE = FloRefusal.type_name_value()
 
 # Every word the LTN's snapshot holds decodes through its codec; the one
 # the scada sends with no sema word yet decodes through its local word.
@@ -322,6 +329,8 @@ class LtnActor(GridworksActor):
                 self.process_latest_price_bytes(envelope.from_alias, body)
             elif envelope.type_name == FLO_REPLY_TYPE:
                 self.process_flo_recommendation_bytes(envelope.from_alias, body)
+            elif envelope.type_name == FLO_REFUSAL_TYPE:
+                self.process_flo_refusal_bytes(envelope.from_alias, body)
             return
         if header.src != self.scada_alias:
             self.logger.warning(f"Dropped {envelope.type_name} from {header.src}")
@@ -375,6 +384,21 @@ class LtnActor(GridworksActor):
             )
             return
         self.on_loop(self.process_flo_recommendation, recommendation)
+
+    def process_flo_refusal_bytes(self, from_alias: str, body: bytes) -> None:
+        if from_alias != self.flo_alias:
+            self.log(
+                f"Ignoring {FLO_REFUSAL_TYPE} from {from_alias}: the FLO is {self.flo_alias}"
+            )
+            return
+        try:
+            refusal = FloRefusal.from_bytes(body)
+        except Exception as e:  # noqa: BLE001 -- the live path keeps running
+            self.logger.warning(
+                f"Could not decode {FLO_REFUSAL_TYPE} from {from_alias}: {e}"
+            )
+            return
+        self.on_loop(self.process_flo_refusal, refusal)
 
     def send_to_scada(self, payload: SemaType) -> None:
         """A word to the scada, wrapped as its codec expects. Safe from any thread."""
@@ -464,6 +488,38 @@ class LtnActor(GridworksActor):
         self.contract_handler.latest_bid = bid
         self.send_to_mm(bid)
         self.log(f"Bid: {bid}")
+
+    def process_flo_refusal(self, refusal: FloRefusal) -> None:
+        """The FLO's answer that there is no recommendation. One for the
+        open request is copied to the scada for the record and raised as a
+        Warning glitch, so the fleet sees why the slot has no FLO bid; the
+        LTN bids as it does when no answer comes. One for another bidder
+        or slot is dropped."""
+        self.heard.append(FLO_REFUSAL_TYPE)
+        if (
+            self.flo_params is None
+            or refusal.bidder_alias != self.flo_params.g_node_alias
+            or refusal.start_unix_s != self.flo_params.start_unix_s
+        ):
+            open_slot = self.flo_params.start_unix_s if self.flo_params else None
+            self.log(
+                f"Dropped a refusal for {refusal.bidder_alias} slot "
+                f"{refusal.start_unix_s}; the open request is for slot {open_slot}"
+            )
+            return
+        self.send_to_scada(refusal)
+        summary = f"FLO refused slot {refusal.start_unix_s}: {refusal.reason.value}"
+        self.log(f"{summary}, {refusal.detail}")
+        self.send_to_scada(
+            Glitch(
+                from_g_node_alias=self.alias,
+                node=LTN_NODE_NAME,
+                type=LogLevel.Warning,
+                summary=summary,
+                details=refusal.detail or "",
+                created_ms=self.plant_clock.now_ms(),
+            )
+        )
 
     def process_scada_message(self, word: SemaType) -> None:
         self.heard.append(word.type_name)
@@ -570,7 +626,7 @@ class LtnActor(GridworksActor):
         self.send_to_scada(
             SendLayout(
                 from_g_node_alias=self.alias,
-                message_created_ms=int(time.time() * 1000),
+                message_created_ms=self.plant_clock.now_ms(),
             )
         )
         self.log("Requesting layout")
@@ -651,16 +707,12 @@ class LtnActor(GridworksActor):
             return
 
         if not self.accepts_dispatch or self.service_mode != ServiceMode.Heating:
-            self.log("Should not be running FLOs when Scada is in Summer!! Sent glitch")
-            self.send_to_scada(
-                Glitch(
-                    from_g_node_alias=self.alias,
-                    node=LTN_NODE_NAME,
-                    type=LogLevel.Warning,
-                    summary="Should not be running FLOs when Scada is in Summer!!",
-                    details="",
-                    created_ms=int(time.time() * 1000),
-                )
+            # A known, occasional race: the main loop checked this before
+            # calling, and the scada's posture changed while the forecasts
+            # were fetched. Logged, not a glitch; nothing is wrong.
+            self.log(
+                "Not asking the FLO: the scada no longer accepts dispatch in "
+                "Heating mode."
             )
             return
 
@@ -694,7 +746,7 @@ class LtnActor(GridworksActor):
                 buffer_available_kwh=buffer_available_kwh,
                 g_node_alias=self.alias,
                 start_unix_s=slot_start_s,
-                created_ms=int(self.plant_clock.now() * 1000),
+                created_ms=self.plant_clock.now_ms(),
                 previous=previous_run_for(self.previous_run, slot_start_s),
             )
         except SeasonalFillForecast as e:
@@ -710,32 +762,17 @@ class LtnActor(GridworksActor):
         self.log(f"Requested the FLO for slot {slot_start_s} from {self.flo_alias}")
 
     def latest_contract_is_live(self) -> bool:
-        """Validates that the bid's market slot name corresponds to the current hour."""
+        """Whether the latest bid is for the slot the plant clock is in."""
         bid = self.contract_handler.latest_bid
         if not bid:
             return False
-
-        # Extract slot start time from market slot name
-        try:
-            market_slot_name_parts = bid.market_slot_name.split(".")
-            slot_start_s = int(market_slot_name_parts[-1])
-
-            # Get current hour start in unix time
-            now = time.time()
-            current_hour_start_s = int(now - (now % 3600))
-
-            # Check if bid is for current hour
-            if slot_start_s != current_hour_start_s:
-                self.log(
-                    f"Bid time mismatch: bid for {slot_start_s}, current hour starts at {current_hour_start_s}"
-                )
-
-                return False
-
-            return True
-        except (ValueError, IndexError) as e:
-            self.log(f"Error validating bid time: {e}")
+        if not slot_is_current(bid.market_slot_name, self.plant_clock.now()):
+            self.log(
+                f"Bid time mismatch: bid for {bid.market_slot_name} is not for "
+                "the current hour"
+            )
             return False
+        return True
 
     def process_latest_price(self, payload: LatestPrice) -> None:
         self.heard.append(LATEST_PRICE_TYPE)
@@ -753,7 +790,7 @@ class LtnActor(GridworksActor):
                 type=LogLevel.Warning,
                 summary="Invalid bid timeframe",
                 details=f"Stale bid detected. Bid slot start: {self.contract_handler.latest_bid.market_slot_name}. Current price: {payload.market_slot_name}",
-                created_ms=int(time.time() * 1000),
+                created_ms=self.plant_clock.now_ms(),
             )
             self.contract_handler.latest_bid = None
             self.send_to_scada(glitch)
@@ -1240,30 +1277,8 @@ class LtnActor(GridworksActor):
                 dist_usd_mwh = [float(row[1]) for row in rows]
                 lmp_usd_mwh = [float(row[2]) for row in rows]
 
-                # Crop the beginning of the CSV and extend the end to get a forecast for the next 48 hours
-                time_now = time.time()
-                timestamps_forecast = [t for t in timestamps if t > time_now]
-                hours_available = len(timestamps_forecast)
-                if not hours_available:
-                    raise Exception("No forecasts available for the next hours!")
-                dp_forecast_usd_per_mwh = [
-                    p for p, t in zip(dist_usd_mwh, timestamps) if t > time_now
-                ]
-                lmp_forecast_usd_per_mwh = [
-                    p for p, t in zip(lmp_usd_mwh, timestamps) if t > time_now
-                ]
-                if hours_available < 48:
-                    dp_forecast_usd_per_mwh = dp_forecast_usd_per_mwh + [
-                        dp_forecast_usd_per_mwh[-1]
-                    ] * (48 - len(dp_forecast_usd_per_mwh))
-                    lmp_forecast_usd_per_mwh = lmp_forecast_usd_per_mwh + [
-                        lmp_forecast_usd_per_mwh[-1]
-                    ] * (48 - len(lmp_forecast_usd_per_mwh))
-
-                # Update the price forecast
-                self.price_forecast = PriceForecast(
-                    dp_usd_per_mwh=dp_forecast_usd_per_mwh,
-                    lmp_usd_per_mwh=lmp_forecast_usd_per_mwh,
+                self.price_forecast = price_forecast_from(
+                    timestamps, dist_usd_mwh, lmp_usd_mwh, self.plant_clock.now()
                 )
                 self.log("Successfully read price forecast from local CSV.")
 
@@ -1283,7 +1298,7 @@ class LtnActor(GridworksActor):
             type=log_level,
             summary=summary,
             details=details,
-            created_ms=int(time.time() * 1000),
+            created_ms=self.plant_clock.now_ms(),
         )
         self.send_to_scada(glitch)
         self.log("Sent glitch")

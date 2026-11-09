@@ -1,9 +1,15 @@
-"""The LTN forms the slot it bids on from the ops word."""
+"""The LTN forms the slot it bids on from the ops word, and knows whether a
+slot is the current hour."""
 
 import json
 from pathlib import Path
 
-from gwltn.market import answers_request, bid_from_recommendation, market_slot_name
+from gwltn.market import (
+    answers_request,
+    bid_from_recommendation,
+    market_slot_name,
+    slot_is_current,
+)
 from gwltn.sema.enums import MarketPriceUnit, MarketQuantityUnit
 from gwltn.sema.types import (
     FloOptimalPath,
@@ -27,6 +33,15 @@ def test_the_slot_is_the_ops_words_maker_and_product_at_the_start() -> None:
         market_slot_name(ops(), 1762178400)
         == "e.rt60gate5.hw1.isone.me.versant.keene.1762178400"
     )
+
+
+def test_a_slot_is_current_for_its_own_hour() -> None:
+    start = 1762178400
+    slot = market_slot_name(ops(), start)
+    assert slot_is_current(slot, start)
+    assert slot_is_current(slot, start + 3599.9)
+    assert not slot_is_current(slot, start + 3600)
+    assert not slot_is_current(slot, start - 1)
 
 
 def recommendation(alias: str, start_s: int) -> FloRecommendation:
